@@ -1,49 +1,119 @@
-// Follow this setup guide to integrate the Deno language server with your editor:
-// https://deno.land/manual/getting_started/setup_your_environment
-// This enables autocomplete, go to definition, etc.
-
-// Setup type definitions for built-in Supabase Runtime APIs
-import "@supabase/functions-js/edge-runtime.d.ts"
 // supabase/functions/upload-photo/index.ts
+//
+// Verifies the caller is a legitimate Supabase Auth user (JWT in Authorization header).
+// No plain password needed — Supabase issues the JWT on login and verifies it here.
+//
+// To add upload users: Supabase Dashboard → Authentication → Users → Invite user
+// They receive an email to set their password. That's it.
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-Deno.serve(async (req) => {
-  const { password, fileBase64, fileName } = await req.json();
+const BUCKET = "portfolio-images";
 
-  // 🔐 Validate password (server-side)
-  if (password !== Deno.env.get("UPLOAD_PASSWORD")) {
-    return new Response("Unauthorized", { status: 401 });
+Deno.serve(async (req) => {
+  const origin = req.headers.get("origin") ?? "*";
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Headers": "content-type, authorization",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
-  const supabase = createClient(
+  // ── 1. Verify the JWT from the Authorization header ──
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return new Response("Missing authorization token", { status: 401, headers: corsHeaders });
+  }
+
+  const token = authHeader.replace("Bearer ", "");
+
+  // Use anon key + token to verify the user is real and active
+  const supabaseAuth = createClient(
     Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SERVICE_ROLE_KEY")!
+    Deno.env.get("SUPABASE_ANON_KEY")!,
   );
 
-  const fileBuffer = Uint8Array.from(atob(fileBase64), c => c.charCodeAt(0));
+  const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
 
-  const { error } = await supabase.storage
-    .from("portfolio-images")
-    .upload(fileName, fileBuffer, {
-      contentType: "image/*",
-      upsert: true,
+  if (authError || !user) {
+    return new Response("Unauthorized — invalid or expired session", {
+      status: 401,
+      headers: corsHeaders,
     });
-
-  if (error) {
-    return new Response(JSON.stringify(error), { status: 500 });
   }
 
-  return new Response("Upload successful");
+  // ── 2. Parse request body ──
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return new Response("Invalid JSON", { status: 400, headers: corsHeaders });
+  }
+
+  const { fileBase64, fileName, title, caption, sizeBytes } = body as {
+    fileBase64?: string;
+    fileName?: string;
+    title?: string;
+    caption?: string;
+    sizeBytes?: number;
+  };
+
+  if (!fileBase64 || !fileName) {
+    return new Response("Missing fileBase64 or fileName", { status: 400, headers: corsHeaders });
+  }
+
+  // ── 3. Upload with SERVICE_ROLE_KEY (bypasses storage RLS) ──
+  const supabaseAdmin = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SERVICE_ROLE_KEY")!,
+  );
+
+  let fileBuffer: Uint8Array;
+  try {
+    fileBuffer = Uint8Array.from(atob(fileBase64), (c) => c.charCodeAt(0));
+  } catch {
+    return new Response("Invalid base64 data", { status: 400, headers: corsHeaders });
+  }
+
+  const ext = (fileName.split(".").pop() ?? "").toLowerCase();
+  const contentTypeMap: Record<string, string> = {
+    jpg: "image/jpeg", jpeg: "image/jpeg",
+    png: "image/png", webp: "image/webp", gif: "image/gif",
+  };
+  const contentType = contentTypeMap[ext] ?? "image/jpeg";
+
+  const { error: storageError } = await supabaseAdmin.storage
+    .from(BUCKET)
+    .upload(fileName, fileBuffer, { contentType, upsert: false });
+
+  if (storageError) {
+    console.error("Storage error:", storageError);
+    return new Response(JSON.stringify(storageError), { status: 500, headers: corsHeaders });
+  }
+
+  // ── 4. Get public URL and insert metadata row ──
+  const { data: urlData } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(fileName);
+
+  const { error: dbError } = await supabaseAdmin.from("photos").insert({
+    title: title || fileName.split("/").pop(),
+    caption: caption || "",
+    file_name: fileName.split("/").pop(),
+    storage_path: fileName,
+    public_url: urlData.publicUrl,
+    size_bytes: sizeBytes ?? fileBuffer.byteLength,
+    uploaded_by: user.email,   // track who uploaded it
+  });
+
+  if (dbError) {
+    console.error("DB error:", dbError);
+    return new Response(JSON.stringify(dbError), { status: 500, headers: corsHeaders });
+  }
+
+  return new Response(JSON.stringify({ publicUrl: urlData.publicUrl }), {
+    status: 200,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 });
-
-/* To invoke locally:
-
-  1. Run `supabase start` (see: https://supabase.com/docs/reference/cli/supabase-start)
-  2. Make an HTTP request:
-
-  curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/upload-photo' \
-    --header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0' \
-    --header 'Content-Type: application/json' \
-    --data '{"name":"Functions"}'
-
-*/

@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="A photography portfolio — capturing moments in time." />
+  <title>Portfolio — Photography</title>
+
+  <!-- Preconnect for faster font loading -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+  <link rel="stylesheet" href="css/style.css" />
+
+  <!--
+    Supabase JS SDK (v2, ESM-compatible via CDN)
+    We use the UMD build so it attaches to window.supabase,
+    which our module imports detect.
+  -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════ NAVIGATION -->
+  <nav>
+    <a href="#" class="nav-logo">
+      folio<span>.</span>
+    </a>
+
+    <ul class="nav-links" id="nav-menu">
+      <li><a href="#" data-route class="active">Home</a></li>
+      <li><a href="#gallery" data-route>Gallery</a></li>
+      <!-- Upload link: hidden until user logs in -->
+      <li id="nav-upload-link" hidden>
+        <a href="#upload" data-route class="nav-upload-a">Upload</a>
+      </li>
+    </ul>
+
+    <div class="nav-right">
+      <!-- Logged-in user email (hidden until login) -->
+      <span id="nav-user-email" class="nav-user-email" hidden></span>
+      <!-- Lock icon: 🔒 = logged out, 🔓 = logged in (click to toggle) -->
+      <button id="nav-lock" class="nav-lock-btn" aria-label="Admin login">
+        <span id="nav-lock-icon">🔒</span>
+      </button>
+    </div>
+
+    <button class="nav-toggle" id="nav-toggle" aria-label="Toggle menu">
+      <span></span><span></span><span></span>
+    </button>
+  </nav>
+
+  <!-- ═══════════════════════════════════════════════ HOME PAGE -->
+  <div class="page active" id="page-home">
+
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-text">
+        <p class="section-label">Photography Portfolio</p>
+        <h1 class="display-heading">
+          Light.<br/>
+          Shadow.<br/>
+          <em>Story.</em>
+        </h1>
+        <p class="body-text">
+          A curated collection of moments — each frame a conversation
+          between the world as it is and the world as it feels.
+        </p>
+        <div class="hero-actions">
+          <a href="#gallery" class="btn btn-primary">View Gallery →</a>
+        </div>
+        <div class="stats-row">
+          <div class="stat-item">
+            <span class="stat-num" id="home-photo-count">—</span>
+            <span class="stat-label">Photos</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-num">∞</span>
+            <span class="stat-label">Stories</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-num">1</span>
+            <span class="stat-label">Perspective</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hero image: replace with your own photo -->
+      <div class="hero-image-wrap">
+        <img
+          src="https://images.unsplash.com/photo-1452587925148-ce544e77e70d?w=800&q=80"
+          alt="Portfolio hero"
+          loading="eager"
+        />
+      </div>
+    </section>
+
+    <!-- Featured strip -->
+    <div class="featured-strip">
+      <div class="section">
+        <p class="section-label">Recent Work</p>
+        <h2 class="display-heading" style="font-size: clamp(2rem,5vw,3.5rem)">
+          Latest <em>captures</em>
+        </h2>
+        <div class="featured-grid" id="featured-grid">
+          <!-- Populated by JS from Supabase, or placeholders below -->
+          <div class="featured-card">
+            <img src="https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80" alt="Mountains" loading="lazy" />
+            <div class="featured-card-overlay"><span>Landscapes</span></div>
+          </div>
+          <div class="featured-card">
+            <img src="https://images.unsplash.com/photo-1547036967-23d11aacaee0?w=600&q=80" alt="Portrait" loading="lazy" />
+            <div class="featured-card-overlay"><span>Portraits</span></div>
+          </div>
+          <div class="featured-card">
+            <img src="https://images.unsplash.com/photo-1449824913935-59a10b8d2000?w=600&q=80" alt="City" loading="lazy" />
+            <div class="featured-card-overlay"><span>Urban</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+      <span class="footer-text">© <span id="year"></span> folio. All rights reserved.</span>
+      <span class="footer-text">Built with Supabase + GitHub Pages</span>
+    </footer>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ GALLERY PAGE -->
+  <div class="page" id="page-gallery">
+
+    <div class="gallery-header">
+      <div>
+        <p class="section-label">Archive</p>
+        <h2 class="display-heading" style="font-size: clamp(2rem,5vw,3.5rem)">
+          All <em>Photos</em>
+        </h2>
+        <p class="body-text" style="margin-top: 0.5rem; font-size: 0.9rem;">
+          <span id="gallery-count">—</span> images in the collection
+        </p>
+      </div>
+
+      <div class="gallery-controls">
+        <!-- Filter buttons (UX affordance — could wire to tags/categories later) -->
+        <button class="filter-btn active">All</button>
+        <button class="filter-btn">Recent</button>
+      </div>
+    </div>
+
+    <!-- Masonry grid — populated by JS -->
+    <div class="gallery-grid" id="gallery-grid"></div>
+
+    <!-- Empty state -->
+    <div id="gallery-empty" hidden>
+      <div class="gallery-empty" style="max-width:1200px;margin:0 auto;padding:2rem clamp(1.5rem,5vw,3rem)">
+        <div class="gallery-empty-icon">📷</div>
+        <h3 class="display-heading" style="font-size:2rem">No photos yet</h3>
+        <p class="body-text" style="text-align:center">
+          Upload your first image to get started.
+        </p>
+        <a href="#upload" class="btn btn-primary">Upload →</a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ UPLOAD PAGE -->
+  <div class="page" id="page-upload">
+
+    <div class="upload-layout">
+
+      <!-- LEFT: Upload form -->
+      <div>
+        <p class="section-label">Add to Collection</p>
+        <h2 class="display-heading" style="font-size: clamp(2rem,5vw,3.5rem); margin-bottom:2rem;">
+          Upload <em>Images</em>
+        </h2>
+
+        <!-- Logged-in user badge -->
+        <div class="auth-gate" style="margin-bottom:1.5rem;">
+          <div class="auth-gate-header">
+            <div class="auth-badge authenticated" id="auth-badge"></div>
+            <span class="form-label">Signed in as <strong id="upload-user-email"></strong></span>
+          </div>
+        </div>
+
+        <div id="upload-form">
+          <form id="upload-form-inner">
+
+            <div class="form-group">
+              <label class="form-label" for="title-input">
+                Title <span style="opacity:0.5">(optional)</span>
+              </label>
+              <input type="text" id="title-input" class="form-input"
+                placeholder="e.g. Golden Hour at the Coast" maxlength="120" />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="caption-input">
+                Caption <span style="opacity:0.5">(optional)</span>
+              </label>
+              <input type="text" id="caption-input" class="form-input"
+                placeholder="A short description…" maxlength="250" />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Images</label>
+              <div class="drop-zone" id="drop-zone">
+                <input type="file" id="file-input"
+                  accept="image/jpeg,image/png,image/webp,image/gif" multiple />
+                <div class="drop-zone-icon">⬆</div>
+                <p class="drop-zone-text">
+                  Drop images here, or <strong>click to browse</strong><br/>
+                  JPG, PNG, WebP, GIF — up to 10MB each
+                </p>
+              </div>
+            </div>
+
+            <div class="preview-grid" id="preview-grid"></div>
+
+            <div class="upload-progress" id="upload-progress">
+              <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+              </div>
+              <span class="progress-label" id="progress-label">Preparing…</span>
+            </div>
+
+            <button type="submit" class="btn btn-primary" id="submit-btn"
+              disabled style="margin-top:1.5rem; width:100%; justify-content:center;">
+              Upload Images
+            </button>
+
+          </form>
+        </div>
+      </div>
+
+      <!-- RIGHT: Info sidebar -->
+      <div class="upload-sidebar">
+
+        <div class="info-card">
+          <h3>About this tool</h3>
+          <div class="info-item">
+            <div class="info-item-dot"></div>
+            <span class="info-item-text">
+              Images are compressed in-browser before upload — no quality loss visible to viewers.
+            </span>
+          </div>
+          <div class="info-item">
+            <div class="info-item-dot"></div>
+            <span class="info-item-text">
+              Files are stored in Supabase Storage (S3-compatible), served via CDN.
+            </span>
+          </div>
+          <div class="info-item">
+            <div class="info-item-dot"></div>
+            <span class="info-item-text">
+              You can upload multiple images at once. Each gets its own numbered title.
+            </span>
+          </div>
+          <div class="info-item">
+            <div class="info-item-dot"></div>
+            <span class="info-item-text">
+              Use arrow keys in the gallery lightbox to navigate between photos.
+            </span>
+          </div>
+        </div>
+
+        <div class="info-card">
+          <h3>Limits</h3>
+          <div class="info-item">
+            <div class="info-item-dot"></div>
+            <span class="info-item-text">Max file size: <strong>10 MB</strong> per image</span>
+          </div>
+          <div class="info-item">
+            <div class="info-item-dot"></div>
+            <span class="info-item-text">Accepted: JPG, PNG, WebP, GIF</span>
+          </div>
+          <div class="info-item">
+            <div class="info-item-dot"></div>
+            <span class="info-item-text">Images resized to max 2000px before upload</span>
+          </div>
+          <div class="info-item">
+            <div class="info-item-dot"></div>
+            <span class="info-item-text">Free Supabase tier: 1GB storage, 2GB bandwidth/month</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ LOGIN MODAL -->
+  <div class="lightbox" id="login-modal" role="dialog" aria-modal="true" aria-label="Admin login">
+    <div class="login-modal-inner">
+      <button class="lightbox-close" id="login-close" aria-label="Close">✕ ESC</button>
+
+      <p class="section-label" style="color:rgba(245,240,232,0.5)">Admin Access</p>
+      <h2 style="font-family:var(--font-display);font-size:2rem;color:var(--cream);margin-bottom:1.5rem;letter-spacing:-0.02em;">
+        Sign <em style="color:var(--ember);">In</em>
+      </h2>
+
+      <div class="form-group">
+        <label class="form-label" for="login-email" style="color:rgba(245,240,232,0.6)">Email</label>
+        <input type="email" id="login-email" class="form-input login-input"
+          placeholder="you@example.com" autocomplete="email" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="login-password" style="color:rgba(245,240,232,0.6)">Password</label>
+        <input type="password" id="login-password" class="form-input login-input"
+          placeholder="••••••••" autocomplete="current-password" />
+      </div>
+
+      <p id="login-error" class="form-error" style="margin-bottom:1rem;min-height:1.2em;"></p>
+
+      <button class="btn btn-primary" id="login-submit" style="width:100%;justify-content:center;">
+        Sign In →
+      </button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ LIGHTBOX -->
+  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Photo viewer">
+    <div class="lightbox-inner">
+      <button class="lightbox-close" aria-label="Close">✕ ESC</button>
+      <img src="" alt="Full size photo" />
+      <p class="lightbox-caption"></p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ TOAST -->
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <!-- Year in footer -->
+  <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+
+  <!-- Main app (ES module) -->
+  <script type="module" src="js/app.js"></script>
+
+</body>
+</html>
